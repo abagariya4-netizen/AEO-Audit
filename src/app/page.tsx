@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, Search, CheckCircle, AlertTriangle, XCircle, Info, ExternalLink } from 'lucide-react';
+import { Loader2, Search, CheckCircle, AlertTriangle, XCircle, Info, ExternalLink, Download } from 'lucide-react';
 import { AuditResult, EvaluationCheck } from '@/lib/audit/types';
 
 function StatusIcon({ status }: { status: string }) {
@@ -113,7 +113,7 @@ export default function Home() {
               Real, evidence-based signals with zero hallucination.
             </p>
             
-            <form onSubmit={handleAudit} className="mt-8 flex gap-3 max-w-xl mx-auto">
+            <form onSubmit={handleAudit} className="mt-8 flex gap-3 max-w-xl mx-auto print:hidden">
               <div className="relative flex-1">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                   <Search className="h-5 w-5 text-slate-400" />
@@ -184,11 +184,23 @@ export default function Home() {
             </div>
             
             <div className="flex-1 space-y-4">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">Executive Summary</h2>
-                <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 text-sm mt-1">
-                  {result.url} <ExternalLink className="w-3 h-3" />
-                </a>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Executive Summary</h2>
+                  <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 text-sm mt-1 print:hidden">
+                    {result.url} <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <div className="hidden print:block text-slate-600 text-sm mt-1">
+                    Target URL: {result.url}
+                  </div>
+                </div>
+                <button 
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700 print:hidden"
+                >
+                  <Download className="w-4 h-4" />
+                  Download PDF Report
+                </button>
               </div>
               <div className="prose prose-slate max-w-none text-slate-600 leading-relaxed">
                 {result.executiveSummary.split('\n').map((paragraph, i) => (
@@ -278,7 +290,7 @@ export default function Home() {
                 <Info className="w-6 h-6 text-blue-500" />
                 Needs Manual Verification
               </h3>
-              <p className="text-slate-500 mb-4 text-sm">
+              <p className="text-slate-500 mb-4 text-sm print:hidden">
                 The following checks could not be verified automatically or require human review. They do not negatively impact your AEO score.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
