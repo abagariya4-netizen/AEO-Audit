@@ -1,7 +1,7 @@
 export type AuditStatus = 'pass' | 'warn' | 'fail' | 'manual' | 'unavailable';
 export type Impact = 'high' | 'med' | 'low';
 export type Effort = 'high' | 'med' | 'low';
-export type Category = 'Technical Access' | 'Schema / Structured Data' | 'Content Structure' | 'Authority / Entity' | 'AI Visibility';
+export type Category = 'Technical Access' | 'On-Page SEO' | 'Schema / Structured Data' | 'Content Structure' | 'Authority / Entity' | 'AI Visibility';
 
 export interface Evidence {
   technical: {
@@ -10,6 +10,8 @@ export interface Evidence {
     sitemap: { status: number, content: string | null };
     https: boolean;
     rawHtml: string | null;
+    viewportPresent: boolean;
+    hreflangTags: string[];
   };
   schema: {
     jsonLd: any[];
@@ -27,6 +29,15 @@ export interface Evidence {
     publishedTime: string | null;
     author: string | null;
     ogSiteName: string | null;
+    metaDescription: string | null;
+    firstParagraph: string | null;
+    imageAltCoverage: { total: number, withAlt: number };
+    internalLinksCount: number;
+    hasLists: boolean;
+    canonicalUrl: string | null;
+    ogTitle: string | null;
+    ogDescription: string | null;
+    ogImage: string | null;
   };
   authority: {
     wikipediaHit: any | null;
@@ -69,9 +80,10 @@ export interface AuditResult {
 }
 
 export const CATEGORY_WEIGHTS: Record<Category, number> = {
-  'Technical Access': 25,
-  'Content Structure': 25,
+  'Technical Access': 20,
+  'On-Page SEO': 15,
+  'Content Structure': 20,
   'Schema / Structured Data': 20,
-  'Authority / Entity': 20,
+  'Authority / Entity': 15,
   'AI Visibility': 10
 };

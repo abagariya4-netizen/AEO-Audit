@@ -71,7 +71,10 @@ export async function collectEvidence(urlStr: string, onProgress?: (msg: string)
     schema: { jsonLd: [], microdata: [], rdfa: [] },
     content: {
       title: null, h1: [], h2: [], h3: [], hasFaqIdOrClass: false,
-      statistics: [], quotes: [], publishedTime: null, author: null, ogSiteName: null
+      statistics: [], quotes: [], publishedTime: null, author: null, ogSiteName: null,
+      metaDescription: null, firstParagraph: null, imageAltCoverage: { total: 0, withAlt: 0 },
+      internalLinksCount: 0, hasLists: false, canonicalUrl: null,
+      ogTitle: null, ogDescription: null, ogImage: null
     },
     authority: { wikipediaHit: null, wikidataHit: null, derivedBrandName: '' },
     aiVisibility: { groundedResult: null, groundedSources: null, promptsTested: [], isGrounded: false }
@@ -97,6 +100,39 @@ export async function collectEvidence(urlStr: string, onProgress?: (msg: string)
       evidence.content!.h1 = $('h1').map((_, el) => $(el).text().trim()).get();
       evidence.content!.h2 = $('h2').map((_, el) => $(el).text().trim()).get();
       evidence.content!.h3 = $('h3').map((_, el) => $(el).text().trim()).get();
+
+      evidence.technical!.viewportPresent = $('meta[name="viewport"]').length > 0;
+      evidence.technical!.hreflangTags = $('link[rel="alternate"][hreflang]').map((_, el) => $(el).attr('hreflang') || '').get().filter(Boolean);
+
+      evidence.content!.metaDescription = $('meta[name="description"]').attr('content') || null;
+      
+      const firstH1 = $('h1').first();
+      evidence.content!.firstParagraph = firstH1.length ? firstH1.nextAll('p').first().text().trim() || null : null;
+      
+      const images = $('img');
+      evidence.content!.imageAltCoverage = {
+        total: images.length,
+        withAlt: images.filter((_, el) => !!$(el).attr('alt') && $(el).attr('alt')!.trim() !== '').length
+      };
+
+      const links = $('a[href]');
+      let internalCount = 0;
+      links.each((_, el) => {
+        const href = $(el).attr('href') || '';
+        if (href.startsWith('/') && !href.startsWith('//')) {
+          internalCount++;
+        } else if (href.startsWith(baseUrl)) {
+          internalCount++;
+        }
+      });
+      evidence.content!.internalLinksCount = internalCount;
+
+      evidence.content!.hasLists = $('ul, ol').length > 0;
+      evidence.content!.canonicalUrl = $('link[rel="canonical"]').attr('href') || null;
+
+      evidence.content!.ogTitle = $('meta[property="og:title"]').attr('content') || null;
+      evidence.content!.ogDescription = $('meta[property="og:description"]').attr('content') || null;
+      evidence.content!.ogImage = $('meta[property="og:image"]').attr('content') || null;
 
       const htmlText = $('body').text().toLowerCase();
       evidence.content!.hasFaqIdOrClass = htmlText.includes('faq') || htmlText.includes('frequently asked questions');

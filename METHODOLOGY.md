@@ -20,15 +20,17 @@ Anything that cannot be programmatically verified is labeled **"Needs manual ver
 
 ---
 
-## What the tool checks (5 categories)
+## What the tool checks (6 categories)
 
-**Technical Access (weight 25%)** — Can AI crawlers even read the site? Checks robots.txt for blocks on GPTBot, PerplexityBot, ClaudeBot, Google-Extended and others; presence of llms.txt and sitemap.xml; HTTPS; and whether primary content exists in the raw HTML (not hidden behind JavaScript, which AI crawlers don't execute).
+**Technical Access (weight 20%)** — Can AI crawlers even read the site? Checks robots.txt for blocks on GPTBot, PerplexityBot, ClaudeBot, Google-Extended and others; presence of llms.txt and sitemap.xml; HTTPS; viewport tags, hreflang tags, and whether primary content exists in the raw HTML (not hidden behind JavaScript, which AI crawlers don't execute).
 
-**Content Structure (weight 25%)** — Is the content easy for an AI to extract and reuse? Checks for answer-first formatting, question-form headings, a real FAQ section, named statistics, and named quotations/citations — the signals that correlate with being cited in AI answers.
+**On-Page SEO (weight 15%)** — Does the page use fundamental SEO best practices? Checks for a single H1, logical heading hierarchy, well-sized meta description and title tag, an answer-first introductory paragraph, image alt text coverage, internal linking, use of lists, canonical tag, and Open Graph tags.
+
+**Content Structure (weight 20%)** — Is the content easy for an AI to extract and reuse? Checks for answer-first formatting, question-form headings, a real FAQ section, named statistics, and named quotations/citations — the signals that correlate with being cited in AI answers.
 
 **Schema / Structured Data (weight 20%)** — Can AI understand the entities on the page? Parses JSON-LD and detects high-value types: Organization, Product, FAQPage, Article, Review/AggregateRating, WebSite.
 
-**Authority / Entity (weight 20%)** — Is the brand a known entity? Checks Wikipedia and Wikidata for a matching entity, and verifies whether that entity's official-website claim (Wikidata P856) links back to the audited domain. Ambiguous matches are flagged for manual review rather than guessed.
+**Authority / Entity (weight 15%)** — Is the brand a known entity? Checks Wikipedia and Wikidata for a matching entity, and verifies whether that entity's official-website claim (Wikidata P856) links back to the audited domain. Ambiguous matches are flagged for manual review rather than guessed.
 
 **AI Visibility (weight 10%)** — The direct test: does the brand actually appear in AI answers? Uses Gemini's Google Search grounding to ask realistic buyer questions and checks whether the brand is mentioned, and alongside which competitors. (Requires an API key; unscored if unavailable, never faked.)
 
@@ -76,5 +78,6 @@ A few signals can't be verified reliably from a backend and are intentionally su
 - **External brand mentions / citations** — needs a paid SEO data API; out of scope for v1.
 - **Google Knowledge Panel & Business Profile** — not reliably auto-detectable; flagged for manual check.
 - **Full JS-rendering diff** — the tool detects empty-JS-shell pages from raw HTML; the full render-and-compare is an optional enhancement.
+- **Backlinks, Domain Authority, PPC, UX Heatmaps, Social Media Stats, and Content Traffic** — these require external paid APIs, OAuth into customer accounts, or tracking scripts on the target site. We explicitly refuse to invent or estimate these metrics.
 
 These are listed plainly so the report is trusted: it claims only what it can prove.

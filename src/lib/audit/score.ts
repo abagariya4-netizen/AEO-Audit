@@ -3,6 +3,7 @@ import { EvaluationCheck, ScoredCategory, CATEGORY_WEIGHTS, Category } from './t
 export function calculateScore(checks: EvaluationCheck[]): { categories: ScoredCategory[], overallScore: number } {
   const categoryMap: Record<Category, EvaluationCheck[]> = {
     'Technical Access': [],
+    'On-Page SEO': [],
     'Content Structure': [],
     'Schema / Structured Data': [],
     'Authority / Entity': [],
