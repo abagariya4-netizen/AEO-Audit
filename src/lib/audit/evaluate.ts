@@ -249,41 +249,169 @@ export function evaluateEvidence(evidence: Evidence): EvaluationCheck[] {
   }
 
   // 5. AI Visibility
-  if (!evidence.aiVisibility.isGrounded) {
+  if (!evidence.aiVisibility.isGrounded || evidence.aiVisibility.promptResults.length === 0) {
     checks.push({
       id: 'ai-visibility-grounded',
       category: 'AI Visibility',
       status: 'unavailable',
-      impact: 'med',
+      impact: 'high',
       effort: 'high',
-      evidence: `API Key missing or grounding failed: ${evidence.aiVisibility.groundedResult}`,
-      recommendation: `Provide a Gemini API key with Google Search grounding enabled to measure live visibility.`,
-      title: 'Live AI Visibility (Grounded)'
+      evidence: `API Key missing or generation failed.`,
+      recommendation: `Provide a valid API key to test AI Visibility.`,
+      title: 'Live AI Visibility'
     });
   } else {
-    const isBrandMentioned = evidence.aiVisibility.groundedResult?.toLowerCase().includes(evidence.authority.derivedBrandName.toLowerCase());
-    if (isBrandMentioned) {
-      checks.push({
-        id: 'ai-visibility-grounded',
-        category: 'AI Visibility',
-        status: 'pass',
-        impact: 'high',
-        effort: 'high',
-        evidence: `Brand "${evidence.authority.derivedBrandName}" was mentioned in grounded response. Sources cited: ${evidence.aiVisibility.groundedSources?.length || 0}.`,
-        recommendation: `Since "${evidence.authority.derivedBrandName}" appeared in the grounded response with ${evidence.aiVisibility.groundedSources?.length || 0} sources cited, monitor competitive queries next.`,
-        title: 'Live AI Visibility (Grounded)'
-      });
+    const results = evidence.aiVisibility.promptResults.filter(r => !r.failed);
+    const successfulPrompts = results.length;
+    
+    if (successfulPrompts === 0) {
+      checks.push({ id: 'ai-visibility-grounded', category: 'AI Visibility', status: 'unavailable', impact: 'high', effort: 'high', evidence: `All prompts failed to execute.`, recommendation: `Retry the audit later.`, title: 'Live AI Visibility' });
     } else {
+      // Check 1: Overall Citation Rate
+      const brandMentionsCount = results.filter(r => r.brandMentioned).length;
+      const citationRate = (brandMentionsCount / successfulPrompts) * 100;
+      const avgSources = results.reduce((sum, r) => sum + r.sourcesCount, 0) / successfulPrompts;
+      
+      let rateStatus: import('./types').AuditStatus = 'pass';
+      if (citationRate < 10) rateStatus = 'fail';
+      else if (citationRate < 50) rateStatus = 'warn';
+      
       checks.push({
-        id: 'ai-visibility-grounded',
-        category: 'AI Visibility',
-        status: 'fail',
-        impact: 'high',
-        effort: 'high',
-        evidence: `Brand "${evidence.authority.derivedBrandName}" was NOT mentioned in the grounded response. Tested prompt: "${evidence.aiVisibility.promptsTested[0]}"`,
-        recommendation: `Because "${evidence.authority.derivedBrandName}" was NOT mentioned in the grounded response for the prompt "${evidence.aiVisibility.promptsTested[0]}", focus on digital PR and external mentions to improve entity salience.`,
-        title: 'Live AI Visibility (Grounded)'
+        id: 'aiv-citation-rate', category: 'AI Visibility', status: rateStatus, impact: 'high', effort: 'high',
+        evidence: `Brand appeared in ${brandMentionsCount} of ${successfulPrompts} tested prompts (${citationRate.toFixed(1)}%). Grounding sources averaged ${avgSources.toFixed(1)} per prompt.`,
+        recommendation: `Target a citation rate above 50% by building stronger digital PR and answering user intents more directly.`,
+        title: 'Overall Citation Rate'
       });
+
+      // Check 2: Funnel Coverage
+      const stages = ['TOFU', 'MOFU', 'BOFU'];
+      let weakStages: string[] = [];
+      let stageRates: Record<string, number> = {};
+      
+      stages.forEach(stage => {
+        const stagePrompts = results.filter(r => r.stage === stage);
+        if (stagePrompts.length > 0) {
+          const mentioned = stagePrompts.filter(r => r.brandMentioned).length;
+          const rate = (mentioned / stagePrompts.length) * 100;
+          stageRates[stage] = rate;
+          if (rate < 30) weakStages.push(stage);
+        } else {
+          stageRates[stage] = 0;
+          weakStages.push(stage);
+        }
+      });
+      
+      let funnelStatus: import('./types').AuditStatus = 'pass';
+      if (weakStages.length === 3) funnelStatus = 'fail';
+      else if (weakStages.length > 0) funnelStatus = 'warn';
+      
+      checks.push({
+        id: 'aiv-funnel-coverage', category: 'AI Visibility', status: funnelStatus, impact: 'high', effort: 'high',
+        evidence: `TOFU: ${stageRates['TOFU'].toFixed(0)}%, MOFU: ${stageRates['MOFU'].toFixed(0)}%, BOFU: ${stageRates['BOFU'].toFixed(0)}%. ${weakStages.length > 0 ? `${weakStages.join(', ')} visibility is weakest.` : 'Visibility is strong.'}`,
+        recommendation: weakStages.length > 0 ? `Improve visibility in ${weakStages.join(', ')} stages by creating targeted content for those queries.` : 'Maintain strong visibility across all funnel stages.',
+        title: 'Funnel Coverage'
+      });
+      
+      // Check 3: Share of Voice
+      const hasCompetitors = evidence.aiVisibility.competitors && evidence.aiVisibility.competitors.length > 0;
+      if (hasCompetitors) {
+        let totalBrandMentions = 0;
+        let targetBrandMentions = 0;
+        
+        results.forEach(r => {
+          if (r.brandMentioned) targetBrandMentions++;
+          const compMentionsCount = r.competitorsMentioned.length;
+          if (r.brandMentioned || compMentionsCount > 0) {
+            totalBrandMentions += (r.brandMentioned ? 1 : 0) + compMentionsCount;
+          }
+        });
+        
+        if (totalBrandMentions === 0) {
+          checks.push({
+            id: 'aiv-share-of-voice', category: 'AI Visibility', status: 'warn', impact: 'high', effort: 'high',
+            evidence: `Neither target brand nor competitors were mentioned in any responses. Share of voice is 0%.`,
+            recommendation: `The entire industry lacks AI visibility for these prompts. Create strong pillar content to claim this space.`,
+            title: 'Share of Voice'
+          });
+        } else {
+          const sov = (targetBrandMentions / totalBrandMentions) * 100;
+          let sovStatus: import('./types').AuditStatus = 'pass';
+          if (sov < 5) sovStatus = 'fail';
+          else if (sov < 20) sovStatus = 'warn';
+          
+          const compData = evidence.aiVisibility.competitors.map(c => {
+            const count = results.filter(r => r.competitorsMentioned.includes(c)).length;
+            const percentage = (count / totalBrandMentions) * 100;
+            return `${c}: ${percentage.toFixed(0)}%`;
+          });
+          
+          checks.push({
+            id: 'aiv-share-of-voice', category: 'AI Visibility', status: sovStatus, impact: 'high', effort: 'high',
+            evidence: `Share of voice: ${sov.toFixed(1)}% vs [${compData.join(', ')}]. Based on ${totalBrandMentions} total mentions across all responses.`,
+            recommendation: sovStatus !== 'pass' ? `Increase Share of Voice by analyzing the content strategies of competitors outperforming you.` : `Maintain strong competitive Share of Voice.`,
+            title: 'Share of Voice'
+          });
+        }
+      } else {
+        checks.push({ id: 'aiv-share-of-voice', category: 'AI Visibility', status: 'manual', impact: 'high', effort: 'high', evidence: `Enter competitor names to measure share of voice.`, recommendation: `Re-run the audit with competitors to see Share of Voice.`, title: 'Share of Voice' });
+      }
+      
+      // Check 4: Position Quality
+      const citedResults = results.filter(r => r.brandMentioned && r.brandPosition !== null);
+      if (citedResults.length === 0) {
+        checks.push({
+          id: 'aiv-position', category: 'AI Visibility', status: 'fail', impact: 'med', effort: 'high',
+          evidence: `Brand was never cited, so position cannot be measured.`, recommendation: `Improve overall citation rate first.`, title: 'Position Quality'
+        });
+      } else {
+        const avgPosition = citedResults.reduce((sum, r) => sum + r.brandPosition!, 0) / citedResults.length;
+        const topPositions = citedResults.filter(r => r.brandPosition === 1).length;
+        const topPercentage = (topPositions / citedResults.length) * 100;
+        
+        let posStatus: import('./types').AuditStatus = 'pass';
+        if (avgPosition > 3.5) posStatus = 'fail';
+        else if (avgPosition > 2.0) posStatus = 'warn';
+        
+        checks.push({
+          id: 'aiv-position', category: 'AI Visibility', status: posStatus, impact: 'med', effort: 'high',
+          evidence: `When cited, brand appears at average position #${avgPosition.toFixed(1)}. ${topPercentage.toFixed(0)}% of citations are in the #1 position.`,
+          recommendation: posStatus !== 'pass' ? `Improve ranking position by gaining highly authoritative backlinks and creating definitive guides.` : `Excellent average ranking position.`,
+          title: 'Position Quality'
+        });
+      }
+      
+      // Check 5: Competitor Gap
+      if (hasCompetitors) {
+        const compCounts: Record<string, number> = {};
+        evidence.aiVisibility.competitors.forEach(c => {
+          compCounts[c] = results.filter(r => r.competitorsMentioned.includes(c)).length;
+        });
+        
+        const outperforming = Object.entries(compCounts).filter(([_, count]) => count > brandMentionsCount);
+        
+        let gapStatus: import('./types').AuditStatus = 'pass';
+        if (outperforming.length >= 3) gapStatus = 'fail';
+        else if (outperforming.length > 0) gapStatus = 'warn';
+        
+        if (outperforming.length > 0) {
+          const compList = outperforming.map(([name, count]) => `${name} (${count})`).join(', ');
+          checks.push({
+            id: 'aiv-competitor-gap', category: 'AI Visibility', status: gapStatus, impact: 'high', effort: 'high',
+            evidence: `Competitors appearing more frequently: ${compList}. Brand appeared in ${brandMentionsCount} responses vs top competitor in ${outperforming.sort((a,b) => b[1] - a[1])[0][1]} responses.`,
+            recommendation: `Review content from ${outperforming.map(o => o[0]).join(', ')} to identify content gaps and entity relationships you might be missing.`,
+            title: 'Competitor Gap'
+          });
+        } else {
+          checks.push({
+            id: 'aiv-competitor-gap', category: 'AI Visibility', status: 'pass', impact: 'high', effort: 'high',
+            evidence: `No competitors appear more frequently than the target brand.`,
+            recommendation: `Maintain your lead over competitors.`,
+            title: 'Competitor Gap'
+          });
+        }
+      } else {
+        checks.push({ id: 'aiv-competitor-gap', category: 'AI Visibility', status: 'manual', impact: 'high', effort: 'high', evidence: `Enter competitor names to measure competitor gap.`, recommendation: `Re-run the audit with competitors to measure competitor gap.`, title: 'Competitor Gap' });
+      }
     }
   }
 

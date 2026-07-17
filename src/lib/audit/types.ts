@@ -3,6 +3,30 @@ export type Impact = 'high' | 'med' | 'low';
 export type Effort = 'high' | 'med' | 'low';
 export type Category = 'Technical Access' | 'On-Page SEO' | 'Schema / Structured Data' | 'Content Structure' | 'Authority / Entity' | 'AI Visibility';
 
+export interface PromptResult {
+  prompt: string;
+  stage: 'TOFU' | 'MOFU' | 'BOFU';
+  responseText: string;
+  brandMentioned: boolean;
+  brandPosition: number | null;
+  competitorsMentioned: string[];
+  sourcesCount: number;
+  failed: boolean;
+}
+
+export interface GeoIntelligenceSynthesis {
+  executiveSummary: string;
+  promptsYouWin: Array<{prompt: string, stage: string}>;
+  promptsYouLose: Array<{prompt: string, stage: string, topCompetitor: string}>;
+  brandDescriptors: string[];
+  sprintPlan: Array<{
+    sprint: number;
+    timeframe: string;
+    focus: string;
+    actions: string[];
+  }>;
+}
+
 export interface Evidence {
   technical: {
     robotsTxt: { status: number, content: string | null };
@@ -45,10 +69,11 @@ export interface Evidence {
     derivedBrandName: string;
   };
   aiVisibility: {
-    groundedResult: any | null;
-    groundedSources: any[] | null;
-    promptsTested: string[];
     isGrounded: boolean;
+    promptResults: PromptResult[];
+    competitors: string[];
+    industry: string;
+    promptsTested: string[];
   };
   url: string;
 }
@@ -76,14 +101,15 @@ export interface AuditResult {
   overallScore: number;
   categories: ScoredCategory[];
   executiveSummary: string;
+  geoIntelligence?: GeoIntelligenceSynthesis;
   url: string;
 }
 
 export const CATEGORY_WEIGHTS: Record<Category, number> = {
-  'Technical Access': 20,
-  'On-Page SEO': 15,
-  'Content Structure': 20,
-  'Schema / Structured Data': 20,
-  'Authority / Entity': 15,
-  'AI Visibility': 10
+  'Technical Access': 22,
+  'Content Structure': 22,
+  'Schema / Structured Data': 18,
+  'Authority / Entity': 18,
+  'AI Visibility': 20,
+  'On-Page SEO': 0 
 };

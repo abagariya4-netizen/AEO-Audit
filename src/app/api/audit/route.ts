@@ -1,11 +1,13 @@
 import { collectEvidence } from '@/lib/audit/collect';
 import { evaluateEvidence } from '@/lib/audit/evaluate';
 import { calculateScore } from '@/lib/audit/score';
-import { synthesizeResults } from '@/lib/audit/synthesize';
+import { synthesizeResults, synthesizeGeoIntelligence } from '@/lib/audit/synthesize';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const urlStr = searchParams.get('url');
+  const competitorsStr = searchParams.get('competitors') || '';
+  const competitors = competitorsStr.split(',').map(s => s.trim()).filter(Boolean);
 
   if (!urlStr) {
     return new Response(JSON.stringify({ error: 'URL is required' }), { status: 400 });
@@ -21,7 +23,7 @@ export async function GET(req: Request) {
       try {
         send({ status: 'info', message: 'Starting audit...' });
         
-        const evidence = await collectEvidence(urlStr, (msg) => {
+        const evidence = await collectEvidence(urlStr, competitors, (msg) => {
            send({ status: 'info', message: msg });
         });
 
@@ -33,12 +35,14 @@ export async function GET(req: Request) {
         
         send({ status: 'info', message: 'Synthesizing final report...' });
         const executiveSummary = await synthesizeResults(categories, overallScore, urlStr);
+        const geoIntelligence = await synthesizeGeoIntelligence(evidence);
         
         const finalResult = {
           url: urlStr,
           overallScore,
           categories,
-          executiveSummary
+          executiveSummary,
+          geoIntelligence: geoIntelligence || undefined
         };
         
         send({ status: 'complete', result: finalResult });

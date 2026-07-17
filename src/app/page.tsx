@@ -13,6 +13,7 @@ function StatusIcon({ status }: { status: string }) {
 
 export default function Home() {
   const [url, setUrl] = useState('');
+  const [competitors, setCompetitors] = useState('');
   const [loading, setLoading] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
   const [result, setResult] = useState<AuditResult | null>(null);
@@ -33,7 +34,12 @@ export default function Home() {
     setProgressMsg('Initializing audit...');
 
     try {
-      const response = await fetch(`/api/audit?url=${encodeURIComponent(targetUrl)}`);
+      const queryParams = new URLSearchParams({ url: targetUrl });
+      if (competitors.trim()) {
+        queryParams.append('competitors', competitors.trim());
+      }
+      
+      const response = await fetch(`/api/audit?${queryParams.toString()}`);
       if (!response.ok) throw new Error('Failed to start audit');
       
       const reader = response.body?.getReader();
@@ -135,6 +141,23 @@ export default function Home() {
                 {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Run Audit'}
               </button>
             </form>
+            
+            <div className="mt-4 max-w-xl mx-auto print:hidden">
+              <label htmlFor="competitors" className="block text-sm font-medium text-slate-700 text-left">
+                Competitor brands (optional)
+              </label>
+              <input
+                type="text"
+                id="competitors"
+                value={competitors}
+                onChange={(e) => setCompetitors(e.target.value)}
+                className="mt-1 block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 bg-white"
+                placeholder="e.g. Wakefit, Sleepwell, Kurlon, Duroflex"
+              />
+              <p className="mt-1 text-sm text-slate-500 text-left">
+                Separate with commas. We'll track how often they appear vs your brand.
+              </p>
+            </div>
 
             {loading && (
               <div className="mt-6 flex flex-col items-center text-slate-600">
@@ -226,7 +249,13 @@ export default function Home() {
                       <p className="text-xs text-slate-500 mt-1">Weight: {cat.weight}%</p>
                     </div>
                     <div className="mt-4 flex items-end justify-between">
-                      <div className="text-2xl font-bold text-slate-900">{Math.round(cat.score)}<span className="text-sm font-normal text-slate-500">/{cat.maxScore}</span></div>
+                      <div className="text-2xl font-bold text-slate-900">
+                        {cat.maxScore > 0 ? (
+                          <>{Math.round(cat.score)}<span className="text-sm font-normal text-slate-500">/{cat.maxScore}</span></>
+                        ) : (
+                          <span className="text-slate-400 text-lg">N/A</span>
+                        )}
+                      </div>
                       <div className="flex gap-2">
                         {passCount > 0 && <span className="flex items-center text-xs font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md"><CheckCircle className="w-3 h-3 mr-1"/>{passCount}</span>}
                         {warnCount > 0 && <span className="flex items-center text-xs font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md"><AlertTriangle className="w-3 h-3 mr-1"/>{warnCount}</span>}
@@ -304,6 +333,89 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+          
+          {/* GeoIntelligence AI Visibility Report */}
+          {result.geoIntelligence && (
+            <div className="space-y-8 pt-8 border-t border-slate-200">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">AI Visibility Report</h2>
+                <p className="mt-2 text-slate-600">{result.geoIntelligence.executiveSummary}</p>
+                {result.geoIntelligence.brandDescriptors.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {result.geoIntelligence.brandDescriptors.map((desc, i) => (
+                      <span key={i} className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                        {desc}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Scorecard row based on prompt extraction logic... 
+                  Since we don't have the raw evidence here, we extract these from the evaluate checks 
+                  or we can display the synthesized prompts table.
+              */}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Win / Lose Table */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-200 bg-slate-50">
+                    <h3 className="font-semibold text-slate-900">Prompts Tested ({result.geoIntelligence.promptsYouWin.length + result.geoIntelligence.promptsYouLose.length})</h3>
+                  </div>
+                  <ul className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+                    {result.geoIntelligence.promptsYouWin.map((p, i) => (
+                      <li key={`win-${i}`} className="px-5 py-3 flex items-start gap-3">
+                        <CheckCircle className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{p.prompt}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{p.stage}</span>
+                            <span className="text-xs text-emerald-600 font-medium">Cited</span>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                    {result.geoIntelligence.promptsYouLose.map((p, i) => (
+                      <li key={`lose-${i}`} className="px-5 py-3 flex items-start gap-3">
+                        <XCircle className="w-5 h-5 text-rose-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{p.prompt}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{p.stage}</span>
+                            <span className="text-xs text-rose-600 font-medium">Not Cited</span>
+                            {p.topCompetitor && p.topCompetitor !== 'None' && (
+                              <span className="text-xs text-slate-500">→ Top Comp: {p.topCompetitor}</span>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Sprint Plan */}
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-slate-900">Action Plan</h3>
+                  {result.geoIntelligence.sprintPlan.map((sprint, i) => (
+                    <div key={i} className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                      <div className="flex justify-between items-start mb-3">
+                        <h4 className="font-bold text-slate-900 text-lg">Sprint {sprint.sprint} <span className="text-sm font-normal text-slate-500 ml-2">{sprint.timeframe}</span></h4>
+                      </div>
+                      <p className="text-sm font-medium text-blue-700 mb-3">{sprint.focus}</p>
+                      <ul className="space-y-2">
+                        {sprint.actions.map((action, j) => (
+                          <li key={j} className="text-sm text-slate-600 flex items-start gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 flex-shrink-0" />
+                            <span>{action}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

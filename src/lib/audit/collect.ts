@@ -64,7 +64,7 @@ function deriveBrandName(evidence: Partial<Evidence>): string {
   }
 }
 
-export async function collectEvidence(urlStr: string, onProgress?: (msg: string) => void): Promise<Evidence> {
+export async function collectEvidence(urlStr: string, competitors: string[] = [], onProgress?: (msg: string) => void): Promise<Evidence> {
   const evidence: Partial<Evidence> = {
     url: urlStr,
     technical: {} as any,
@@ -77,7 +77,7 @@ export async function collectEvidence(urlStr: string, onProgress?: (msg: string)
       ogTitle: null, ogDescription: null, ogImage: null
     },
     authority: { wikipediaHit: null, wikidataHit: null, derivedBrandName: '' },
-    aiVisibility: { groundedResult: null, groundedSources: null, promptsTested: [], isGrounded: false }
+    aiVisibility: { isGrounded: false, promptResults: [], competitors: [], industry: '', promptsTested: [] }
   };
 
   try {
@@ -197,43 +197,153 @@ export async function collectEvidence(urlStr: string, onProgress?: (msg: string)
       } catch (e) { }
     }
 
-    onProgress?.('Testing AI Visibility...');
-    if (process.env.GEMINI_API_KEY) {
+    onProgress?.('Generating prompts...');
+    if (process.env.GEMINI_API_KEY && brandName && brandName !== 'Unknown Brand') {
       try {
-        const prompt = `What are the best mattress brands in India? List specific brand names.`;
-        evidence.aiVisibility!.promptsTested = [prompt];
+        const textContent = evidence.content!.firstParagraph || '';
+        const rawBody = evidence.technical!.rawHtml ? cheerio.load(evidence.technical!.rawHtml)('body').text().substring(0, 2000) : '';
+        const contextText = textContent.length > 500 ? textContent : rawBody.substring(0, 2000);
 
-        const apiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              tools: [{ google_search: {} }]
-            })
-          }
-        );
+        const genPrompt = `You are an SEO/AEO specialist. Based on this website content, generate exactly 10 search prompts that real users ask AI engines when researching this brand's product category. Spread them across funnel stages. Return ONLY valid JSON, no markdown, no explanation:
+{
+  "industry": "string (e.g. mattresses and sleep products, India)",
+  "prompts": [
+    { "prompt": "string", "stage": "TOFU" | "MOFU" | "BOFU" }
+  ]
+}
 
-        const data = await apiRes.json();
+TOFU = educational/awareness ("how to choose a mattress for back pain")
+MOFU = comparison/consideration ("best mattress brands India 2026") 
+BOFU = decision/brand-specific ("is [brand] a good mattress", "[brand] vs competitor")
 
-        if (!apiRes.ok) {
-          throw new Error(`API ${apiRes.status}: ${JSON.stringify(data).slice(0, 300)}`);
+For BOFU prompts, use the actual brand name. Do not use placeholder text.
+Homepage content summary: ${contextText}
+Brand name: ${brandName}`;
+
+        const genRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: genPrompt }] }] })
+        });
+        
+        let genData = await genRes.json();
+        let genText = genData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        genText = genText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        let generated: { industry: string, prompts: { prompt: string, stage: 'TOFU' | 'MOFU' | 'BOFU' }[] };
+        try {
+          generated = JSON.parse(genText);
+          if (!generated.prompts || generated.prompts.length !== 10) throw new Error('Invalid prompt count');
+        } catch (e) {
+          generated = {
+            industry: 'Unknown',
+            prompts: [
+              { prompt: `What are the common issues in ${brandName}'s category?`, stage: 'TOFU' },
+              { prompt: `Best alternatives to ${brandName}`, stage: 'MOFU' },
+              { prompt: `Is ${brandName} worth it?`, stage: 'BOFU' }
+            ]
+          };
         }
 
-        const answerText = data.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join(' ') || '';
-        evidence.aiVisibility!.groundedResult = answerText;
+        evidence.aiVisibility!.industry = generated.industry;
+        evidence.aiVisibility!.promptsTested = generated.prompts.map(p => p.prompt);
+        evidence.aiVisibility!.promptResults = [];
+        evidence.aiVisibility!.competitors = competitors;
         evidence.aiVisibility!.isGrounded = true;
 
-        const chunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        evidence.aiVisibility!.groundedSources = chunks || [];
+        const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+        const promises = generated.prompts.map(async (p, i) => {
+          await sleep(i * 1000); // Stagger by 1s
+          onProgress?.(`Testing prompt ${i + 1}/${generated.prompts.length}: ${p.prompt.substring(0, 40)}...`);
+          
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+            
+            const apiRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: p.prompt }] }],
+                  tools: [{ google_search: {} }]
+                }),
+                signal: controller.signal
+              }
+            );
+            clearTimeout(timeout);
+
+            if (!apiRes.ok) throw new Error('Failed');
+            const data = await apiRes.json();
+            const responseText = data.candidates?.[0]?.content?.parts?.map((part: any) => part.text).join(' ') || '';
+            const chunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+            
+            const brandLower = brandName.toLowerCase();
+            const brandMentioned = responseText.toLowerCase().includes(brandLower);
+            
+            let brandPosition = null;
+            if (brandMentioned) {
+              const properNouns = responseText.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g) || [];
+              let currentPosition = 1;
+              const seenBrands = new Set<string>();
+              
+              for (const noun of properNouns) {
+                if (noun.length < 4) continue;
+                if (!seenBrands.has(noun.toLowerCase())) {
+                  seenBrands.add(noun.toLowerCase());
+                  if (noun.toLowerCase().includes(brandLower) || brandLower.includes(noun.toLowerCase())) {
+                    brandPosition = currentPosition;
+                    break;
+                  }
+                  currentPosition++;
+                }
+              }
+              if (brandPosition === null) brandPosition = 1;
+            }
+
+            const competitorsMentioned = competitors.filter(c => responseText.toLowerCase().includes(c.toLowerCase()));
+
+            return {
+              prompt: p.prompt,
+              stage: p.stage as 'TOFU' | 'MOFU' | 'BOFU',
+              responseText,
+              brandMentioned,
+              brandPosition,
+              competitorsMentioned,
+              sourcesCount: chunks.length,
+              failed: false
+            };
+          } catch (e) {
+            return {
+              prompt: p.prompt,
+              stage: p.stage as 'TOFU' | 'MOFU' | 'BOFU',
+              responseText: '',
+              brandMentioned: false,
+              brandPosition: null,
+              competitorsMentioned: [],
+              sourcesCount: 0,
+              failed: true
+            };
+          }
+        });
+
+        const results = await Promise.allSettled(promises);
+        results.forEach(res => {
+          if (res.status === 'fulfilled') {
+            evidence.aiVisibility!.promptResults.push(res.value);
+          }
+        });
+
       } catch (e: any) {
-        evidence.aiVisibility!.groundedResult = `Failed: ${e.message}`;
         evidence.aiVisibility!.isGrounded = false;
       }
     } else {
-      evidence.aiVisibility!.groundedResult = null;
       evidence.aiVisibility!.isGrounded = false;
+      evidence.aiVisibility!.promptResults = [];
+      evidence.aiVisibility!.competitors = [];
+      evidence.aiVisibility!.industry = '';
     }
 
     return evidence as Evidence;
